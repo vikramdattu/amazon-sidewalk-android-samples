@@ -31,6 +31,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.amazon.identity.auth.device.api.workflow.RequestContext
+import com.amazon.sidewalk.sample.ApiKeyDialog
+import com.amazon.sidewalk.sample.ApiKeyManager
 import com.amazon.sidewalk.sample.DeregisterDialog
 import com.amazon.sidewalk.sample.IDeregisterOnClickListener
 import com.amazon.sidewalk.sample.R
@@ -49,6 +51,9 @@ class AccountSettingFragment :
 
     @Inject
     lateinit var requestContext: RequestContext
+
+    @Inject
+    lateinit var apiKeyManager: ApiKeyManager
 
     private var progressDialog: ProgressDialog? = null
 
@@ -171,6 +176,7 @@ class AccountSettingFragment :
                 when (uiState.event) {
                     is AccountSettingEvent.RequestLwaToken -> {
                         Log.e("Sidewalk", "RequestLwaToken failed, error=$message")
+                        handleApiKeyError(uiState.exception)
                     }
                     is AccountSettingEvent.Login -> {
                         Log.e("Sidewalk", "Login failed, error=$message")
@@ -187,6 +193,25 @@ class AccountSettingFragment :
                 }
                 progressDialog?.dismiss()
             }
+        }
+    }
+
+    private fun handleApiKeyError(exception: Throwable?) {
+        // Check if this is an API key related error
+        if (exception is IllegalArgumentException &&
+            (exception.message?.contains("API Key", ignoreCase = true) == true ||
+             exception.message?.contains("Invalid API Key", ignoreCase = true) == true)) {
+
+            // Show API key dialog to allow user to re-enter the key
+            ApiKeyDialog(requireContext(), apiKeyManager) { apiKey ->
+                // API key has been updated, retry the token request
+                // We can trigger this by recreating the fragment or calling the view model method
+                showMessage("API key updated. Please restart the app to apply changes.")
+            }.show()
+        } else {
+            // Show generic error message for other failures
+            val message = exception?.message ?: "Unknown error occurred during authentication"
+            showMessage("Authentication failed: $message", "Error")
         }
     }
 

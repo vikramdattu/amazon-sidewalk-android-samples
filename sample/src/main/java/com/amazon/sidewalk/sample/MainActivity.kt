@@ -31,6 +31,7 @@ import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import com.amazon.sidewalk.sample.fragment.ScanFragment
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -38,11 +39,42 @@ class MainActivity : AppCompatActivity() {
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var drawerLayout: DrawerLayout
 
+    @Inject
+    lateinit var apiKeyManager: ApiKeyManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        setupMenuDrawer()
+        checkApiKeyAndSetup()
+    }
+
+    private fun checkApiKeyAndSetup() {
+        val storedApiKey = apiKeyManager.getStoredApiKey()
+        val assetsApiKey = apiKeyManager.getApiKeyFromAssets()
+
+        // If we have a valid stored API key, proceed
+        if (apiKeyManager.isValidApiKey(storedApiKey)) {
+            setupMenuDrawer()
+            return
+        }
+
+        // If the assets API key is valid, save it and proceed
+        if (apiKeyManager.isValidApiKey(assetsApiKey)) {
+            apiKeyManager.saveApiKey(assetsApiKey!!)
+            setupMenuDrawer()
+            return
+        }
+
+        // Show API key dialog
+        showApiKeyDialog()
+    }
+
+    private fun showApiKeyDialog() {
+        ApiKeyDialog(this, apiKeyManager) { apiKey ->
+            // API key entered and validated
+            setupMenuDrawer()
+        }.show()
     }
 
     private fun setupMenuDrawer() {

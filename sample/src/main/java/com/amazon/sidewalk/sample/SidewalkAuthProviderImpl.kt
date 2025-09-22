@@ -37,6 +37,7 @@ class SidewalkAuthProviderImpl
     constructor(
         private val context: Context,
         private val logger: Logger,
+        private val apiKeyManager: ApiKeyManager,
     ) : SidewalkAuthProvider {
         override suspend fun getToken(): SidewalkResult<String> = obtainLwaToken(context, logger)
 
@@ -45,26 +46,42 @@ class SidewalkAuthProviderImpl
             logger: Logger,
         ): SidewalkResult<String> =
             suspendCoroutine { continuation ->
-                val scopes = arrayOf(ScopeFactory.scopeNamed("sidewalk::manage_endpoint"))
-                AuthorizationManager.getToken(
-                    context,
-                    scopes,
-                    object : Listener<AuthorizeResult, AuthError> {
-                        override fun onSuccess(result: AuthorizeResult) {
-                            result.accessToken?.let {
-                                logger.log(Level.INFO, "We have the LWA token")
-                                continuation.resume(SidewalkResult.Success(it))
-                            } ?: run {
-                                logger.log(Level.INFO, "No accessToken found")
-                                continuation.resume(SidewalkResult.Failure())
-                            }
-                        }
+                try {
+                    // Check if we have a valid API key before attempting to get token
+                    val apiKey = apiKeyManager.getStoredApiKey() ?: apiKeyManager.getApiKeyFromAssets()
+                    if (!apiKeyManager.isValidApiKey(apiKey)) {
+                        logger.log(Level.SEVERE, "Invalid or missing API key")
+                        continuation.resume(SidewalkResult.Failure(IllegalArgumentException("Invalid API Key")))
+                        return@suspendCoroutine
+                    }
 
-                        override fun onError(ae: AuthError) {
-                            logger.log(Level.SEVERE, "Error: the user is not signed in, e=$ae")
-                            continuation.resume(SidewalkResult.Failure(ae))
-                        }
-                    },
-                )
+                    val scopes = arrayOf(ScopeFactory.scopeNamed("sidewalk::manage_endpoint"))
+                    AuthorizationManager.getToken(
+                        context,
+                        scopes,
+                        object : Listener<AuthorizeResult, AuthError> {
+                            override fun onSuccess(result: AuthorizeResult) {
+                                result.accessToken?.let {
+                                    logger.log(Level.INFO, "We have the LWA token")
+                                    continuation.resume(SidewalkResult.Success(it))
+                                } ?: run {
+                                    logger.log(Level.INFO, "No accessToken found")
+                                    continuation.resume(SidewalkResult.Failure())
+                                }
+                            }
+
+                            override fun onError(ae: AuthError) {
+                                logger.log(Level.SEVERE, "Error: the user is not signed in, e=$ae")
+                                continuation.resume(SidewalkResult.Failure(ae))
+                            }
+                        },
+                    )
+                } catch (e: IllegalArgumentException) {
+                    logger.log(Level.SEVERE, "Invalid API Key: ${e.message}")
+                    continuation.resume(SidewalkResult.Failure(e))
+                } catch (e: Exception) {
+                    logger.log(Level.SEVERE, "Unexpected error during token retrieval: ${e.message}")
+                    continuation.resume(SidewalkResult.Failure(e))
+                }
             }
     }
